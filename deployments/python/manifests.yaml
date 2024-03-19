@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-examples-python
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-examples-python-service
+  namespace: platform-examples-python
+spec:
+  selector:
+    app: platform-examples-python
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-examples-python-pvc
+  annotations:
+    volumeType: local
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 5Gi
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-examples-python-deployment
+  namespace: platform-examples-python
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: platform-examples-python
+  template:
+    metadata:
+      labels:
+        app: platform-examples-python
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: platform-examples-python-init
+          image: busybox
+          command: ['sh', '-c', 'mkdir -p /data && chown -R 1000:1000 /data']
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: sqlite-volume
+              mountPath: /data
+      containers:
+        - name: platform-examples-python-container
+          image: localhost/platform-examples-python:local
+          env:
+            - name: DATABASE_URL
+              value: "sqlite+aiosqlite:////data/db.sqlite3"
+          ports:
+            - containerPort: 8000
+          volumeMounts:
+            - name: sqlite-volume
+              mountPath: /data
+      volumes:
+        - name: sqlite-volume
+          persistentVolumeClaim:
+            claimName: platform-examples-python-pvc
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: platform-examples-python-ingress
+  namespace: platform-examples-python
+spec:
+  rules:
+    - host: python.platform-examples.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: platform-examples-python-service
+                port:
+                  number: 8000
+  ingressClassName: contour

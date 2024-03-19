@@ -1,0 +1,3 @@
+"""
+Adapter for producing messages.
+"""
