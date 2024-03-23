@@ -1,0 +1,2 @@
+resources/**/*.*
+!resources/**/main.tf
