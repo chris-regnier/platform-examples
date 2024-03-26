@@ -3,6 +3,4 @@ provider "kubernetes" {
     config_context = "kind-kind-ingress"
 }
 
-module "kubernetes_deployment" {
-  source = "../../../../deployments/opentofu/modules/kubernetes"
-}
+ 

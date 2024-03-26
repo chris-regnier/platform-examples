@@ -84,12 +84,15 @@ resource "kubernetes_deployment" "deployment" {
                 container {
                     name  = var.application_name
                     image = "${var.application_image_repository}:${var.application_image_tag}"
+                    dynamic "volume_mount" {
+                        for_each = var.use_local_volume ? [1] : []
+                        content {
+                            name       = kubernetes_persistent_volume_claim.local_volume[0].metadata.0.name
+                            mount_path = "/data"
+                        }
+                    }
                     port {
                         container_port = var.service_port
-                    }
-                    volume_mount {
-                        name       = var.use_local_volume ? kubernetes_persistent_volume_claim.local_volume[0].metadata.0.name : ""
-                        mount_path = "/data"
                     }
                     security_context {
                         run_as_user = 0
