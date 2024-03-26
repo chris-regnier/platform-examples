@@ -11,6 +11,7 @@ import (
 
 	"sigs.k8s.io/kind/pkg/cluster"
 
+	"github.com/gruntwork-io/terratest/modules/docker"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	test_structure "github.com/gruntwork-io/terratest/modules/test-structure"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,8 @@ provider "kubernetes" {
 	config_context = "{{.Context}}"
 }
 `
-const rootDirectory string = "../../../../deployments/opentofu/modules"
+const rootDirectory string = "../../../../"
+const rootOpenTofuDirectory string = "../../../../deployments/opentofu/modules"
 
 func TestMain(m *testing.M) {
 	err := createKindCluster()
@@ -39,8 +41,6 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Error: %v", err)
 		os.Exit(2)
 	}
-
-	loadPodmanImageToKindCluster("localhost/platform-examples-python:local")
 
 	exitVal := m.Run()
 
@@ -54,6 +54,14 @@ func TestMain(m *testing.M) {
 	os.Remove(kindConfigPath)
 
 	os.Exit(exitVal)
+}
+
+func buildAndLoadDockerImage(t *testing.T, contextPath string, dockerfilePath string, tag string) {
+	buildOptions := &docker.BuildOptions{
+		Tags:         []string{tag, fmt.Sprintf("docker.io/library/%s", tag), fmt.Sprintf("localhost/%s", tag)},
+		OtherOptions: []string{"-f", rootDirectory + dockerfilePath},
+	}
+	docker.Build(t, contextPath, buildOptions)
 }
 
 func createKindCluster() error {
@@ -79,9 +87,10 @@ func deleteKindCluster() error {
 }
 
 func loadPodmanImageToKindCluster(image string) error {
-	command := exec.Command("kind", "load", image)
+	command := exec.Command("kind", "load", "docker-image", "-n", kindClusterName, image)
 	err := command.Run()
 	if err != nil {
+		fmt.Printf("Error: %v", err)
 		return err
 	}
 
@@ -116,7 +125,17 @@ func createKubernetesProviderFile(t *testing.T, config ProviderConfig, tempDirec
 }
 
 func TestTerraformHelloWorldExample(t *testing.T) {
-	tempDirectory := test_structure.CopyTerraformFolderToTemp(t, rootDirectory, "kubernetes-deployment")
+	applicationName := "hello-world"
+	applicationImageRepository := fmt.Sprintf("localhost/%s", applicationName)
+	applicationImageTag := "local-test"
+	applicationFullImageName := fmt.Sprintf("%s:%s", applicationImageRepository, applicationImageTag)
+	// Build and load the docker image
+	buildAndLoadDockerImage(t, rootDirectory, "containers/python/Dockerfile", applicationFullImageName)
+
+	err := loadPodmanImageToKindCluster(applicationFullImageName)
+	assert.NoError(t, err)
+
+	tempDirectory := test_structure.CopyTerraformFolderToTemp(t, rootOpenTofuDirectory, "kubernetes-deployment")
 	kubeConfigPath, err := filepath.Abs(kindConfigPath)
 	assert.NoError(t, err)
 	provider := ProviderConfig{
@@ -130,7 +149,9 @@ func TestTerraformHelloWorldExample(t *testing.T) {
 		TerraformDir: tempDirectory,
 		NoColor:      true,
 		Vars: map[string]interface{}{
-			"use_local_volume": false,
+			"use_local_volume":             false,
+			"application_image_repository": applicationImageRepository,
+			"application_image_tag":        applicationImageTag,
 		},
 	})
 
